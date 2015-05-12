@@ -1,3 +1,5 @@
+import java.util.UUID
+
 import akka.actor._
 import akka.routing.RoundRobinRouter
 import scala.util.Random
@@ -8,23 +10,24 @@ import scala.util.Random
 object GuessMe extends App {
   case object Initiate
   case object Guess
-  case class Guessed(number: Int)
+  case class Guessed(uuid: String, number: Int)
+  val RANGE: Int = 1001
 
-  class Guesser() extends Actor with ActorLogging {
+  class Guesser(uuid: String) extends Actor with ActorLogging {
     def receive = {
       case Guess => {
-        val random = new Random().nextInt(101)
-        log.info("I am guessing: " + random)
-        sender ! Guessed(random)
+        val random = new Random().nextInt(RANGE)
+        log.info(uuid + " is guessing: " + random)
+        sender ! Guessed(uuid, random)
       }
     }
   }
 
   class Questioner extends Actor with ActorLogging {
-    val guessme: Int = new Random().nextInt(101)
+    val guessme: Int = new Random().nextInt(RANGE)
 
     val guessRoute = context.actorOf(
-      Props[Guesser].withRouter(RoundRobinRouter(10)),
+      Props(new Guesser(UUID.randomUUID().toString)).withRouter(RoundRobinRouter(10)),
       name = "guessRoute"
     )
 
@@ -33,15 +36,15 @@ object GuessMe extends App {
         log.info("Initialization... please guess number: " + guessme)
         for (i <- 0 until 10)
           guessRoute ! Guess
-      case Guessed(number) =>
-        log.info("Guesser " + sender + " guess " + number)
-        if (number == guessme) {
-          println("!!!!!!")
+      case Guessed(uuid, number) =>
+        if (number != guessme) {
+          sender ! Guess
+        } else {
+          println("The guesser with uuid " + uuid + " guessed it!")
           for (i <- 0 until 10)
             guessRoute ! PoisonPill
-          context.stop(self)
-        } else {
-          sender ! Guess
+          self ! PoisonPill
+          context.system.shutdown()
         }
     }
   }
